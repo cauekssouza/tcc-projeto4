@@ -1,8 +1,5 @@
 <?php
 
-namespace Spatie\GuzzleRateLimiterMiddleware;
-
-use Psr\Http\Message\RequestInterface;
 
 class RateLimiterMiddleware
 {
