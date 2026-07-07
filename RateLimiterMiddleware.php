@@ -4,7 +4,10 @@ namespace Spatie\GuzzleRateLimiterMiddleware;
 
 use Psr\Http\Message\RequestInterface;
 use Throwable;
-use GuzzleHttp\Promise\RejectedPromise;
+
+class RateLimiterMiddlewareException extends \RuntimeException {}
+class HandlerExecutionException extends \RuntimeException {}
+class RateLimitTimeoutException extends \RuntimeException {}
 
 class RateLimiterMiddleware
 {
@@ -44,24 +47,36 @@ class RateLimiterMiddleware
     {
         return function (RequestInterface $request, array $options) use ($handler) {
             try {
-                return $this->rateLimiter->handle(function () use ($request, $handler, $options) {
-                    try {
-                        // Execução do handler protegida contra exceções de infraestrutura
-                        return $handler($request, $options);
-                    } catch (Throwable $handlerException) {
-                        // Aqui você pode integrar com o logger da aplicação, se existir
-                        // logger()->error('Handler failure in RateLimiterMiddleware', ['exception' => $handlerException]);
+                $timeoutSeconds = $options['rate_limiter_timeout'] ?? null;
+                $startTime = $timeoutSeconds !== null ? microtime(true) : null;
 
-                        // Propaga como falha controlada (promise rejeitada) para não derrubar o processo
-                        return new RejectedPromise($handlerException);
+                $callback = function () use ($request, $handler, $options, $timeoutSeconds, $startTime) {
+                    if ($timeoutSeconds !== null && $startTime !== null) {
+                        $elapsed = microtime(true) - $startTime;
+                        if ($elapsed >= $timeoutSeconds) {
+                            throw new RateLimitTimeoutException(
+                                sprintf('Rate limiter timeout of %s seconds exceeded.', $timeoutSeconds)
+                            );
+                        }
                     }
-                });
-            } catch (Throwable $rateLimiterException) {
-                // Falhas internas do rateLimiter (ex.: store/deferrer) são tratadas aqui
-                // Evita crash da aplicação e loops de retenção não controlados
-                // logger()->error('RateLimiter failure in RateLimiterMiddleware', ['exception' => $rateLimiterException]);
 
-                return new RejectedPromise($rateLimiterException);
+                    try {
+                        return $handler($request, $options);
+                    } catch (Throwable $e) {
+                        // Wrap any handler-level infrastructure or runtime exception
+                        throw new HandlerExecutionException('Handler execution failed.', 0, $e);
+                    }
+                };
+
+                try {
+                    return $this->rateLimiter->handle($callback);
+                } catch (Throwable $e) {
+                    // Ensure rate limiter failures are surfaced in a controlled way
+                    throw new RateLimiterMiddlewareException('Rate limiter middleware failure.', 0, $e);
+                }
+            } catch (Throwable $e) {
+                // Final safety net to avoid crashes and propagate a controlled exception
+                throw $e;
             }
         };
     }
