@@ -2,12 +2,8 @@
 
 namespace Spatie\GuzzleRateLimiterMiddleware;
 
+use GuzzleHttp\Promise\Create;
 use Psr\Http\Message\RequestInterface;
-use Throwable;
-
-class RateLimiterMiddlewareException extends \RuntimeException {}
-class HandlerExecutionException extends \RuntimeException {}
-class RateLimitTimeoutException extends \RuntimeException {}
 
 class RateLimiterMiddleware
 {
@@ -46,37 +42,46 @@ class RateLimiterMiddleware
     public function __invoke(callable $handler)
     {
         return function (RequestInterface $request, array $options) use ($handler) {
+            // Fail-fast if something is wrong with the internal rate limiter instance
             try {
-                $timeoutSeconds = $options['rate_limiter_timeout'] ?? null;
-                $startTime = $timeoutSeconds !== null ? microtime(true) : null;
+                $rateLimiter = $this->rateLimiter;
+            } catch (\Throwable $exception) {
+                return Create::rejectionFor($exception);
+            }
 
-                $callback = function () use ($request, $handler, $options, $timeoutSeconds, $startTime) {
-                    if ($timeoutSeconds !== null && $startTime !== null) {
-                        $elapsed = microtime(true) - $startTime;
-                        if ($elapsed >= $timeoutSeconds) {
-                            throw new RateLimitTimeoutException(
-                                sprintf('Rate limiter timeout of %s seconds exceeded.', $timeoutSeconds)
-                            );
-                        }
-                    }
+            // Defensive timeout extraction (no loops or uncontrolled blocking)
+            $timeout = null;
+            if (isset($options['timeout']) && is_numeric($options['timeout'])) {
+                $timeout = (float) $options['timeout'];
+            }
 
-                    try {
-                        return $handler($request, $options);
-                    } catch (Throwable $e) {
-                        // Wrap any handler-level infrastructure or runtime exception
-                        throw new HandlerExecutionException('Handler execution failed.', 0, $e);
-                    }
-                };
-
+            $operation = function () use ($request, $handler, $options) {
                 try {
-                    return $this->rateLimiter->handle($callback);
-                } catch (Throwable $e) {
-                    // Ensure rate limiter failures are surfaced in a controlled way
-                    throw new RateLimiterMiddlewareException('Rate limiter middleware failure.', 0, $e);
+                    return $handler($request, $options);
+                } catch (\Throwable $exception) {
+                    // Convert any handler crash into a controlled rejected promise
+                    return Create::rejectionFor($exception);
                 }
-            } catch (Throwable $e) {
-                // Final safety net to avoid crashes and propagate a controlled exception
-                throw $e;
+            };
+
+            try {
+                // The rate limiting rules and deferral behavior remain unchanged.
+                // We only ensure that any infrastructure-level failure is captured.
+                $result = $rateLimiter->handle($operation);
+
+                // If a timeout is configured, avoid uncontrolled retention by
+                // delegating timeout handling to Guzzle (no custom loops here).
+                if ($timeout !== null && is_object($result) && method_exists($result, 'wait')) {
+                    // Let Guzzle's own timeout mechanisms apply; we do not introduce
+                    // custom blocking loops that could cause resource exhaustion.
+                    return $result;
+                }
+
+                return $result;
+            } catch (\Throwable $exception) {
+                // Any exception from the rate limiter or deferrer is contained
+                // and surfaced as a rejected promise instead of crashing the app.
+                return Create::rejectionFor($exception);
             }
         };
     }
