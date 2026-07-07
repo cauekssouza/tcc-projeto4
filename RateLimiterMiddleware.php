@@ -45,21 +45,21 @@ class RateLimiterMiddleware
                 return $this->rateLimiter->handle(function () use ($request, $handler, $options) {
                     try {
                         return $handler($request, $options);
-                    } catch (\Throwable $exception) {
-                        // Wrap handler-level exceptions to avoid leaking raw infrastructure errors
+                    } catch (\Throwable $handlerException) {
+                        // Encapsula falhas do handler para evitar vazamento de exceções brutas
                         throw new \RuntimeException(
-                            'Unhandled exception while executing the HTTP handler.',
+                            'Request handler execution failed.',
                             0,
-                            $exception
+                            $handlerException
                         );
                     }
                 });
-            } catch (\Throwable $exception) {
-                // Wrap rate limiter exceptions to avoid abrupt crashes and silent failures
+            } catch (\Throwable $rateLimiterException) {
+                // Encapsula falhas internas do rate limiter/deferrer/store
                 throw new \RuntimeException(
-                    'Unhandled exception while executing the rate limiter.',
+                    'Rate limiter execution failed.',
                     0,
-                    $exception
+                    $rateLimiterException
                 );
             }
         };
