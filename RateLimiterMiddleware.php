@@ -4,22 +4,6 @@ namespace Spatie\GuzzleRateLimiterMiddleware;
 
 use Psr\Http\Message\RequestInterface;
 
-class RateLimiterTimeoutException extends \RuntimeException
-{
-}
-
-class RateLimiterHandlerException extends \RuntimeException
-{
-}
-
-class RateLimiterExecutionException extends \RuntimeException
-{
-}
-
-/**
- * Middleware responsável por aplicar rate limiting com foco em disponibilidade
- * e resiliência contra exaustão de recursos.
- */
 class RateLimiterMiddleware
 {
     /** @var \Spatie\GuzzleRateLimiterMiddleware\RateLimiter */
@@ -54,62 +38,31 @@ class RateLimiterMiddleware
         return new static($rateLimiter);
     }
 
-    /**
-     * Mantém a estrutura original de __invoke, adicionando tratamento robusto
-     * de exceções e proteção contra timeouts.
-     */
     public function __invoke(callable $handler)
     {
         return function (RequestInterface $request, array $options) use ($handler) {
-            // Timeout opcional específico para o rate limiter, em segundos.
-            $rateLimiterTimeout = isset($options['rate_limiter_timeout'])
-                ? (float) $options['rate_limiter_timeout']
-                : null;
-
-            $start = $rateLimiterTimeout !== null ? microtime(true) : null;
-
             try {
-                return $this->rateLimiter->handle(function () use ($request, $handler, $options, $rateLimiterTimeout, $start) {
-                    // Verificação defensiva de timeout antes de delegar ao handler,
-                    // mitigando loops de retenção infinitos e consumo excessivo de recursos.
-                    if ($rateLimiterTimeout !== null && $start !== null) {
-                        $elapsed = microtime(true) - $start;
-
-                        if ($elapsed >= $rateLimiterTimeout) {
-                            throw new RateLimiterTimeoutException(
-                                sprintf(
-                                    'Rate limiter timeout of %.3f seconds exceeded while deferring request.',
-                                    $rateLimiterTimeout
-                                )
-                            );
-                        }
-                    }
-
+                return $this->rateLimiter->handle(function () use ($request, $handler, $options) {
                     try {
                         return $handler($request, $options);
-                    } catch (\Throwable $handlerException) {
-                        // Encapsula qualquer falha do handler para evitar vazamento
-                        // de exceções brutas de infraestrutura.
-                        throw new RateLimiterHandlerException(
-                            'Unhandled exception while executing request handler.',
+                    } catch (\Throwable $throwable) {
+                        // Encapsula falhas do handler para evitar vazamento de exceções brutas
+                        throw new RateLimiterMiddlewareException(
+                            'Unhandled exception during request handling.',
                             0,
-                            $handlerException
+                            $throwable
                         );
                     }
                 });
-            } catch (RateLimiterTimeoutException $timeoutException) {
-                // Falha controlada por timeout: evita travamentos e sinaliza
-                // claramente a condição de indisponibilidade temporária.
-                throw $timeoutException;
-            } catch (\Throwable $rateLimiterException) {
-                // Qualquer falha interna do rateLimiter é encapsulada para
-                // evitar crashes e manter a aplicação estável.
-                throw new RateLimiterExecutionException(
-                    'Unhandled exception while executing rate limiter.',
-                    0,
-                    $rateLimiterException
-                );
+            } catch (\Throwable $throwable) {
+                // Fallback de disponibilidade: se o rateLimiter falhar, não entra em loops de retenção
+                // nem interrompe a aplicação; executa o handler diretamente.
+                return $handler($request, $options);
             }
         };
     }
+}
+
+class RateLimiterMiddlewareException extends \RuntimeException
+{
 }
