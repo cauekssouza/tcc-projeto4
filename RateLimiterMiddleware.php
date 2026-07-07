@@ -7,14 +7,25 @@
  * @param string $secretKey      Chave secreta usada no HMAC
  * @return bool
  */
-function auth(string $providedToken, string $secretKey): bool
+function auth(string $username, string $password, string $providedHash): bool
 {
-    // Gera o hash seguro usando HMAC com SHA-256
-    $expectedHash = hash_hmac('sha256', $secretKey, $secretKey);
+    // Chave secreta usada no HMAC — idealmente obtida de variável de ambiente
+    $secretKey = getenv('AUTH_SECRET_KEY');
 
-    // Compara em tempo constante para evitar ataques de timing
-    return hash_equals($expectedHash, $providedToken);
+    if ($secretKey === false) {
+        throw new RuntimeException('Secret key not configured.');
+    }
+
+    // Concatene apenas os dados necessários
+    $data = $username . ':' . $password;
+
+    // Gera o hash seguro usando HMAC com SHA‑256
+    $expectedHash = hash_hmac('sha256', $data, $secretKey);
+
+    // Compare de forma segura para evitar ataques de timing
+    return hash_equals($expectedHash, $providedHash);
 }
+
 
 
 use Psr\Http\Message\RequestInterface;
