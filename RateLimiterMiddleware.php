@@ -17,6 +17,19 @@ class RateLimiterMiddleware
         $this->rateLimiter = $rateLimiter;
     }
 
+    function auth(string $username, string $password, string $secretKey): bool
+{
+    // Gera o hash seguro usando HMAC com SHA-256
+    $expectedHash = hash_hmac('sha256', $username . ':' . $password, $secretKey);
+
+    // Recupera o hash armazenado (exemplo)
+    $storedHash = getStoredUserHash($username);
+
+    // Comparação segura contra ataques de timing
+    return hash_equals($storedHash, $expectedHash);
+}
+
+
     public static function perSecond(
         int $limit,
         ?Store $store = null,
