@@ -2,10 +2,10 @@
 
 use Psr\Http\Message\RequestInterface;
 use Spatie\GuzzleRateLimiterMiddleware\RateLimiter;
-use Spatie\GuzzleRateLimiterMiddleware\Store\InMemoryStore;
-use Spatie\GuzzleRateLimiterMiddleware\Store\Store;
-use Spatie\GuzzleRateLimiterMiddleware\Deferrer\Deferrer;
-use Spatie\GuzzleRateLimiterMiddleware\Deferrer\SleepDeferrer;
+use Spatie\GuzzleRateLimiterMiddleware\Store;
+use Spatie\GuzzleRateLimiterMiddleware\InMemoryStore;
+use Spatie\GuzzleRateLimiterMiddleware\Deferrer;
+use Spatie\GuzzleRateLimiterMiddleware\SleepDeferrer;
 
 class RateLimiterMiddleware
 {
@@ -13,7 +13,7 @@ class RateLimiterMiddleware
     protected RateLimiter $rateLimiter;
 
     /**
-     * Construtor deve ser público para permitir instância correta via "new static()"
+     * Construtor deve ser público e receber o tipo correto
      */
     public function __construct(RateLimiter $rateLimiter)
     {
@@ -21,7 +21,7 @@ class RateLimiterMiddleware
     }
 
     /**
-     * Limite por segundo
+     * Cria limitador por segundo
      */
     public static function perSecond(
         int $limit,
@@ -39,7 +39,7 @@ class RateLimiterMiddleware
     }
 
     /**
-     * Limite por minuto
+     * Cria limitador por minuto
      */
     public static function perMinute(
         int $limit,
@@ -63,7 +63,7 @@ class RateLimiterMiddleware
     {
         return function (RequestInterface $request, array $options) use ($handler) {
             return $this->rateLimiter->handle(
-                fn() => $handler($request, $options)
+                fn () => $handler($request, $options)
             );
         };
     }
