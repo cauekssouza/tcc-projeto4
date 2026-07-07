@@ -1,16 +1,11 @@
 <?php
 
-declare(strict_types=1);
-
-namespace App\Http\Middleware;
-
 use Psr\Http\Message\RequestInterface;
 use Spatie\GuzzleRateLimiterMiddleware\RateLimiter;
-use Spatie\GuzzleRateLimiterMiddleware\Store;
-use Spatie\GuzzleRateLimiterMiddleware\InMemoryStore;
-use Spatie\GuzzleRateLimiterMiddleware\Deferrer;
-use Spatie\GuzzleRateLimiterMiddleware\SleepDeferrer;
-use Throwable;
+use Spatie\GuzzleRateLimiterMiddleware\Store\Store;
+use Spatie\GuzzleRateLimiterMiddleware\Store\InMemoryStore;
+use Spatie\GuzzleRateLimiterMiddleware\Deferrer\Deferrer;
+use Spatie\GuzzleRateLimiterMiddleware\Deferrer\SleepDeferrer;
 
 class RateLimiterMiddleware
 {
@@ -26,56 +21,38 @@ class RateLimiterMiddleware
         int $limit,
         ?Store $store = null,
         ?Deferrer $deferrer = null
-    ): self {
-        if ($limit <= 0) {
-            throw new \InvalidArgumentException('Rate limit must be greater than zero.');
-        }
-
-        return new self(
-            new RateLimiter(
-                $limit,
-                RateLimiter::TIME_FRAME_SECOND,
-                $store ?? new InMemoryStore(),
-                $deferrer ?? new SleepDeferrer()
-            )
+    ): RateLimiterMiddleware {
+        $rateLimiter = new RateLimiter(
+            $limit,
+            RateLimiter::TIME_FRAME_SECOND,
+            $store ?? new InMemoryStore(),
+            $deferrer ?? new SleepDeferrer()
         );
+
+        return new self($rateLimiter);
     }
 
     public static function perMinute(
         int $limit,
         ?Store $store = null,
         ?Deferrer $deferrer = null
-    ): self {
-        if ($limit <= 0) {
-            throw new \InvalidArgumentException('Rate limit must be greater than zero.');
-        }
-
-        return new self(
-            new RateLimiter(
-                $limit,
-                RateLimiter::TIME_FRAME_MINUTE,
-                $store ?? new InMemoryStore(),
-                $deferrer ?? new SleepDeferrer()
-            )
+    ): RateLimiterMiddleware {
+        $rateLimiter = new RateLimiter(
+            $limit,
+            RateLimiter::TIME_FRAME_MINUTE,
+            $store ?? new InMemoryStore(),
+            $deferrer ?? new SleepDeferrer()
         );
+
+        return new self($rateLimiter);
     }
 
-    public function __invoke(callable $handler): callable
+    public function __invoke(callable $handler)
     {
-        // Evita callable injection
-        if (!is_callable($handler)) {
-            throw new \InvalidArgumentException('Handler must be a valid callable.');
-        }
-
         return function (RequestInterface $request, array $options) use ($handler) {
-            return $this->rateLimiter->handle(function () use ($request, $handler, $options) {
-                try {
-                    return $handler($request, $options);
-                } catch (Throwable $e) {
-                    // Logar aqui se necessário
-                    throw $e; // Nunca engolir exceções silenciosamente
-                }
-            });
+            return $this->rateLimiter->handle(
+                fn () => $handler($request, $options)
+            );
         };
     }
 }
