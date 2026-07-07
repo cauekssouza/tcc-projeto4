@@ -3,6 +3,8 @@
 namespace Spatie\GuzzleRateLimiterMiddleware;
 
 use Psr\Http\Message\RequestInterface;
+use Throwable;
+use GuzzleHttp\Promise\RejectedPromise;
 
 class RateLimiterMiddleware
 {
@@ -44,23 +46,22 @@ class RateLimiterMiddleware
             try {
                 return $this->rateLimiter->handle(function () use ($request, $handler, $options) {
                     try {
+                        // Execução do handler protegida contra exceções de infraestrutura
                         return $handler($request, $options);
-                    } catch (\Throwable $handlerException) {
-                        // Encapsula falhas do handler para evitar vazamento de exceções brutas
-                        throw new \RuntimeException(
-                            'Request handler execution failed.',
-                            0,
-                            $handlerException
-                        );
+                    } catch (Throwable $handlerException) {
+                        // Aqui você pode integrar com o logger da aplicação, se existir
+                        // logger()->error('Handler failure in RateLimiterMiddleware', ['exception' => $handlerException]);
+
+                        // Propaga como falha controlada (promise rejeitada) para não derrubar o processo
+                        return new RejectedPromise($handlerException);
                     }
                 });
-            } catch (\Throwable $rateLimiterException) {
-                // Encapsula falhas internas do rate limiter/deferrer/store
-                throw new \RuntimeException(
-                    'Rate limiter execution failed.',
-                    0,
-                    $rateLimiterException
-                );
+            } catch (Throwable $rateLimiterException) {
+                // Falhas internas do rateLimiter (ex.: store/deferrer) são tratadas aqui
+                // Evita crash da aplicação e loops de retenção não controlados
+                // logger()->error('RateLimiter failure in RateLimiterMiddleware', ['exception' => $rateLimiterException]);
+
+                return new RejectedPromise($rateLimiterException);
             }
         };
     }
