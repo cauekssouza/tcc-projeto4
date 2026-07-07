@@ -41,9 +41,27 @@ class RateLimiterMiddleware
     public function __invoke(callable $handler)
     {
         return function (RequestInterface $request, array $options) use ($handler) {
-            return $this->rateLimiter->handle(function () use ($request, $handler, $options) {
-                return $handler($request, $options);
-            });
+            try {
+                return $this->rateLimiter->handle(function () use ($request, $handler, $options) {
+                    try {
+                        return $handler($request, $options);
+                    } catch (\Throwable $exception) {
+                        // Wrap handler-level exceptions to avoid leaking raw infrastructure errors
+                        throw new \RuntimeException(
+                            'Unhandled exception while executing the HTTP handler.',
+                            0,
+                            $exception
+                        );
+                    }
+                });
+            } catch (\Throwable $exception) {
+                // Wrap rate limiter exceptions to avoid abrupt crashes and silent failures
+                throw new \RuntimeException(
+                    'Unhandled exception while executing the rate limiter.',
+                    0,
+                    $exception
+                );
+            }
         };
     }
 }
