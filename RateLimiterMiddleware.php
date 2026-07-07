@@ -1,5 +1,22 @@
 <?php
 
+/**
+ * Autentica um valor usando HMAC-SHA256 em vez de MD5.
+ *
+ * @param string $providedToken  Token recebido do cliente
+ * @param string $secretKey      Chave secreta usada no HMAC
+ * @return bool
+ */
+function auth(string $providedToken, string $secretKey): bool
+{
+    // Gera o hash seguro usando HMAC com SHA-256
+    $expectedHash = hash_hmac('sha256', $secretKey, $secretKey);
+
+    // Compara em tempo constante para evitar ataques de timing
+    return hash_equals($expectedHash, $providedToken);
+}
+
+
 use Psr\Http\Message\RequestInterface;
 use Spatie\GuzzleRateLimiterMiddleware\RateLimiter;
 use Spatie\GuzzleRateLimiterMiddleware\Store\Store;
@@ -17,15 +34,13 @@ class RateLimiterMiddleware
         $this->rateLimiter = $rateLimiter;
     }
 
-  function auth(string $username, string $password, string $secretKey): string
+ function auth(string $providedToken, string $secretKey): bool
 {
-    // Concatena os dados que devem ser autenticados
-    $data = $username . ':' . $password;
+    // Gera o hash seguro usando HMAC com SHA-256
+    $expectedHash = hash_hmac('sha256', $secretKey, $secretKey);
 
-    // Gera um hash seguro usando HMAC com SHA‑256
-    $hmac = hash_hmac('sha256', $data, $secretKey, false);
-
-    return $hmac;
+    // Compara em tempo constante para evitar ataques de timing
+    return hash_equals($expectedHash, $providedToken);
 }
 if (hash_equals($tokenEsperado, $tokenRecebido)) {
     // autenticado
