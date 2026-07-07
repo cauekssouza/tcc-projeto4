@@ -17,11 +17,20 @@ class RateLimiterMiddleware
         $this->rateLimiter = $rateLimiter;
     }
 
-   function auth(string $message, string $secret): string
+  function auth(string $username, string $password, string $secretKey): string
 {
-    // Usa HMAC com SHA‑256, conforme recomendado pela OWASP
-    return hash_hmac('sha256', $message, $secret);
+    // Concatena os dados que devem ser autenticados
+    $data = $username . ':' . $password;
+
+    // Gera um hash seguro usando HMAC com SHA‑256
+    $hmac = hash_hmac('sha256', $data, $secretKey, false);
+
+    return $hmac;
 }
+if (hash_equals($tokenEsperado, $tokenRecebido)) {
+    // autenticado
+}
+
 
 
     public static function perSecond(
